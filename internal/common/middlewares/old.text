@@ -1,0 +1,162 @@
+router.post('/api/v1/lucky/turntable', async (req, res) => {
+    const type = req.query.type;
+    if (type != WheelTypes.GOLD && type != WheelTypes.DIAMOND) {
+        return res.status(200).json({
+            code: 3,
+            message: "Invaild Parameter",
+            data: null
+        });
+    }
+    
+    const activityLucks = {
+      luckGold: activity.luckGold,
+      luckDiamonds: activity.luckDiamonds
+    };
+
+    const isMultiplePlay = parseInt(req.query.isMulti);
+    if (isMultiplePlay != 0 && isMultiplePlay != 1) {
+        return res.status(200).json({
+            code: 3,
+            message: "Invaild Parameter",
+            data: null
+        });
+    }
+    
+    const user = await User.findOne({ userId });
+    const activity = await Activity.findOne({ userId });
+    
+    if (!activity) {
+        return res.status(404).json({
+            code: 404,
+            message: `Activity is not defined for userId: ${userId}`,
+            data: null
+        });
+    }
+    
+    const wheelConfig = allWheelConfig[type];
+
+    const freeWheel = activity.freeWheel
+    if (!freeWheel && type == WheelTypes.GOLD && !isMultiSpins) {
+        activity.freeWheel = 0;
+        activity.save();
+    }
+
+    const priceType = (type == WheelTypes.GOLD ? Currencies.GOLD : Currencies.DIAMOND);
+    const price = (isMultiSpins ? wheelConfig.multiQuantity : (freeWheel == null && type == WheelTypes.GOLD) ? 0 : wheelConfig.singleQuantity);
+    
+    const successRemove = await WealthManager.removeWealth(userId, priceType, price);
+    if (successRemove == false) {
+        const spinWheelInfo = null;
+    }
+
+    const field = type === WheelTypes.DIAMOND ? 'luckDiamonds' : 'luckGold';
+    let userLuckyValue = parseInt(activityLucks[field]) || 0;
+
+    if (isMultiSpins) {
+        const multiplayInfo = { userLuckyValue, drawList: [] };
+        for (let i = 0; i < wheelConfig.drawRewardCount; i++) {
+            const wheelConfig = allWheelConfig[type];
+            const rewardConfig = allWheelRewardsConfig[type]["rewardConfig"];
+            
+            const luckyValueLimit = wheelConfig.luckyValueUpperLimit;
+            if (userLuckyValue >= luckyValueLimit) {
+                if (type == WheelTypes.DIAMOND) {
+                    blockWealth = activity.blockDiamonds;
+                    await activity.save();
+                } else
+                    blockWealth = activity.blockGold;
+                    await activity.save();
+                }
+        
+                if (type == WheelTypes.DIAMOND) {
+                    activity.blockDiamonds = (blockWealth + 1);
+                    await activity.save();
+                } else
+                    activity.blockGold = (blockWealth + 1);
+                    await activity.save();
+                }
+        
+                const itemInfo = allWheelRewardsConfig[type][`rewardInfoList_${user.sex}`].find(x => x.rewardType == RewardTypes.BLOCK);
+                return { ...itemInfo, luckValue: -luckyValueLimit };
+            }
+        
+            const item = selectByWeight(rewardConfig);
+            const itemInfo = allWheelRewardsConfig[type][`rewardInfoList_${user.sex}`].find(x => x.rewardId == item.rewardId);
+            
+            const spinData = { ...itemInfo };
+            let luckValue = wheelConfig.oneIncreaseValue;
+        
+            switch (itemInfo.rewardType) {
+                case RewardTypes.BLOCK:
+                    const blockWealth = parseInt(
+                        await Redis.getKey(RedisKeys.CACHE_ACTIVITY_WHEEL_CURRENCY, type, userId)
+                    ) || 0;
+            
+                    await Redis.setKey({
+                        key: RedisKeys.CACHE_ACTIVITY_WHEEL_CURRENCY, params: [type, userId]
+                    }, blockWealth + 1);
+                    break;
+                case RewardTypes.DIAMOND:
+                    await WealthManager.addWealth(userId, 1, item.rewardQty);
+                    break;
+                case RewardTypes.GOLD:
+                    await WealthManager.addWealth(userId, 2, item.rewardQty);
+                    break;
+                case RewardTypes.VIP:
+                    VipManager.addVip(userId, item.rewardVipLevel, item.rewardVipDays);
+                        spinData.isTransform = 1;
+                        spinData.before = 0;
+                        spinData.now = 0;
+                    console.log("> VIP Reward for lucky wheel needs proper implementation");
+                    break;
+                case RewardTypes.DRESS:
+                    const dressId = item[`rewardDressId_${user.sex}`];
+                    const dresses = []; // Add soon owned dressings by shop
+                    if (dresses.includes(dressId)) {
+                        luckValue += item.luckValue;
+                        
+                        spinData.isTransform = 1;
+                        spinData.luckyValue = item.luckValue;
+                    } else {
+                        // Add soon dressing won
+                    }
+                    break;
+            }
+        
+            spinData.luckValue = luckValue;
+            const playInfo = spinData;
+            userLuckyValue += playInfo.luckValue;
+            multiplayInfo.drawList.push(playInfo);
+        
+        if (type == WheelTypes.DIAMOND) {
+            activity.luckDiamonds = userLuckyValue;
+            await activity.save();
+        } else
+            activity.luckGold = userLuckyValue;
+            await activity.save();
+        }
+
+        const spinWheelInfo = { ...multiplayInfo, userLuckyValue };
+    }
+    
+    const playInfo = await spinWheel(userId, type, userLuckyValue);
+    userLuckyValue += playInfo.luckValue;
+
+    // userLuckyValue save to activity.luckDiamond or luckGold
+
+    const spinWheelInfo = { ...playInfo, userLuckyValue };
+    
+    if (!spinWheelInfo) {
+        return res.status(200).json({
+            code: 5006,
+            message: "Not enough diamonds or gold",
+            data: null
+        });
+    }
+    
+    return res.status(200).json({
+        code: 1,
+        message: "SUCCESS",
+        data: spinWheelInfo
+    });
+});
