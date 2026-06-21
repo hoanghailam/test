@@ -1,0 +1,13 @@
+{
+    "code": 1,
+    "message": "SUCCESS",
+    "data": {
+        "gaddr": "regional-coupons.gl.at.ply.gg:16401",
+        "downurl": "https://reborn-pearl.vercel.app/maps/m1008_1.zip",
+        "name": "g1008",
+        "mname": "g1008",
+        "mid": "g1008",
+        "timestamp": 1734801020366,
+        "signature": "413d1abb7d9404e0033fcb0a8373fedd5cb565e8"
+    }
+}
